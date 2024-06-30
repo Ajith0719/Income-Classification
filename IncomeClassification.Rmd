@@ -1,0 +1,381 @@
+---
+title: "FML-FINAL PROJECT"
+author: "GROUP 19 - AJITH RAJ PERIYASAMY & TEJASVIN MADDINENI"
+date: "2024-04-22"
+output: html_document
+---
+
+#### PROJECT SUMMARY:
+
+With the chosen dataset, I aim to classify people into 2 categories: people earning >50k and people earning <=50k. For this purpose, I will use classification algorithms (K-NN & Naive Bayes) and compare the results from both analyses and make an interpretation as to which one is accurate and suitable for this dataset.
+
+DETAILS:
+
+A) Number of rows - The dataset has 32561 rows.
+B) How many columns - The dataset has 15 columns.
+C) Target Variable - The target variable is Income (<=50k or >50k) 
+D) How many categorical variables and how many numerical ones are among your features. - There are 8 categorical and 7 numerical variables in the dataset.
+
+```{r}
+# LOADING THE DATASET:
+dataset <- read.csv("/Users/ajithrajperiyasamy/Desktop/FILES/KSU FILES/FINAL PROJECTS - SPRING/FML/FINAL PROJECT/DATASET/adult.csv") #Load the dataset
+head(dataset) #Displays the first 6 values of each columns 
+str(dataset) #Displays the structure of the dataset.
+```
+##### Converting all '?' to 'NA' to easily identify missing values.
+
+```{r}
+# REPLACING ALL '?' VALUES WITH 'NA'
+dataset[] <- lapply(dataset, function(x) gsub("\\?", NA, x)) 
+```
+##### Checking the % of NA values in the dataset. 
+
+```{r}
+# CHECKING IF THE NA VALUES ARE MORE THAN 5%
+total_missing <- sum(is.na(dataset))
+total_missing
+
+total_cells <- nrow(dataset)*ncol(dataset)
+total_cells
+
+percent_missing <- (total_missing/total_cells)*100
+percent_missing
+
+print(paste("Percentage of missing values in the dataset:",percent_missing,"%")) # Since the percentage of missing values is less than 5%, we dont need to impute the missing values, rather we can omit them.
+
+final_dataset <- na.omit(dataset)
+```
+
+##### Converting all numerical values that are in character format into numeric.
+
+```{r}
+# Converting relevant numerical values from character datatype to numeric for better analysis:
+final_dataset$Age <- as.numeric(final_dataset$Age)
+final_dataset$Final.Weight <- as.numeric(final_dataset$Final.Weight)
+final_dataset$EducationNum <- as.numeric(final_dataset$EducationNum)
+final_dataset$Capital.Gain <- as.numeric(final_dataset$Capital.Gain)
+final_dataset$capital.loss <- as.numeric(final_dataset$capital.loss)
+final_dataset$Hours.per.Week <- as.numeric(final_dataset$Hours.per.Week)
+str(final_dataset)
+```
+
+##### Performing Descreptive statistics to better understand the dataset.
+
+```{r}
+# DESCRIPTIVE AND BASIC STATISTICS:
+# 1.Summary Statistics:
+summary(final_dataset) # Summary gives us an idea about the mean, median, maximum and minimum value of all the variables belonging to the dataset.
+```
+
+- Below is the scatter plot for Target variable - Income and Input variable - Age. It shows that age alone cannot be a good input variable to determine the income accurately, but when combined with other input variables, it can do a much better job.
+
+```{r}
+# 2. Scatter plot:
+library(ggplot2)
+scatter_plot <- ggplot(final_dataset,aes(x=final_dataset$Age,y=final_dataset$Income))+ geom_point(color="blue",size=2,alpha=0.05)+labs(title = "Scatterplot of Age vs Income",x="Age",y="Income",caption = "scatter plot representation of relationship between Age and Income")
+scatter_plot
+```
+
+- Below is the barplot for the Target Variable - Income. It shows the distribution between the levels of target variable, and it is obvious that people who earn less than or equal to 50k are higher than people who earn more than 50k.
+
+```{r}
+# 3. BARPLOT:
+barplot <- barplot(table(final_dataset$Income), 
+        main = "Distribution of Income",
+        xlab = "Income Categories",
+        ylab = "Frequency")
+```
+ 
+##### In this step, we aim to convert all categorical variable columns into dummy varibales using 'One-Hot-Encoding'
+
+```{r}
+# CONVERTING CATEGORICAL VARIABLES TO NUMERIC BY ONE-HOT ENCODING:
+library(caret)
+dummy_workclass <- dummyVars(~Workclass, data=final_dataset)
+dummy_education <- dummyVars(~Education, data=final_dataset)
+dummy_marital <- dummyVars(~Marital.Status, data=final_dataset)
+dummy_occupation <- dummyVars(~Occupation, data=final_dataset)
+dummy_relationship <- dummyVars(~Relationship, data=final_dataset)
+dummy_race <- dummyVars(~Race, data=final_dataset)
+dummy_gender <- dummyVars(~Gender, data=final_dataset)
+dummy_native <- dummyVars(~Native.Country, data=final_dataset)
+dummy_income <- dummyVars(~Income, data=final_dataset)
+encoded_final_dataset <- cbind(final_dataset, 
+                         predict(dummy_workclass, final_dataset),
+                         predict(dummy_education, final_dataset),
+                         predict(dummy_marital, final_dataset),
+                         predict(dummy_occupation, final_dataset),
+                         predict(dummy_relationship, final_dataset),
+                         predict(dummy_race, final_dataset),
+                         predict(dummy_gender, final_dataset),
+                         predict(dummy_native, final_dataset),
+                         predict(dummy_income, final_dataset))
+encoded_final_dataset <- encoded_final_dataset[, -c(2,4,6,7,8,9,10,14,15)]
+```
+
+##### Normalizing the entire dataset using preProcess function to bring all the variables to a common scale, for unbiased analysis.
+
+```{r}
+# NORMALIZING THE DATA:
+summary(encoded_final_dataset)
+encoded_final_dataset_norm <- preProcess(encoded_final_dataset,method = c('range'))
+normalized_dataset <- predict(encoded_final_dataset_norm,encoded_final_dataset)
+summary(normalized_dataset)
+```
+
+##### Now, we are moving to the variable selection process. The idea is to use Corrplot, Backward Stepwise Regression, and PCA to perform variable selection.
+
+```{r}
+# FEATURE SELECTION (VARIABLE SELECTION)
+# 1. Corrplot:
+library(corrplot)
+cor_matrix <- cor(normalized_dataset[,sapply(normalized_dataset,is.numeric)],use = "complete.obs")
+corrplot(cor_matrix, method = "circle",tl.cex=0.2)
+```
+
+##### Combining two income columns into one to make it easy to analyze.
+
+```{r}
+# Create a new column 'Combined_Income' based on conditions
+normalized_dataset$Combined_Income <- ifelse(normalized_dataset$`Income <=50K` == 1, 0, 1) # In Combined Income column - '0' denotes Income is less than or equal to 50K, and '1' denotes Income being greater than 50K.
+# Drop the original income columns:
+normalized_dataset <-normalized_dataset[, -c(105,106)]
+# Checking names of columns to ensure changes have been made:
+colnames(normalized_dataset)
+```
+
+##### Performed Backward Stepwise regression to identify the most significant input variables.
+
+```{r}
+# 2. Stepwise Regression:
+# Load necessary library
+library(MASS) 
+
+# Fit initial linear regression model with all predictors
+initial_model <- lm(Combined_Income ~ ., data = normalized_dataset)
+
+# Perform backward elimination for variable selection
+final_model <- step(initial_model, direction = "backward")
+
+# Print the final model
+summary(final_model)
+```
+##### Performed PCA for all variables to filter out the important variables for our analysis.
+
+```{r}
+# 3. PCA FOR ALL VARIABLES:
+library(FactoMineR)
+PCA(normalized_dataset)
+```
+
+##### From all the above feature selection methods, we can conclude that all methods pointed towards Age, Hours.Per.Work, Work class, and Education variables being significant for our analysis.
+
+```{r}
+# DROPPING UNWANTED VARIABLES [COLUMNS]
+library(class)
+head(normalized_dataset)
+normalized_class_dataset <-normalized_dataset[, -c(2:5,30:36,37:50,51:104)] # Removing Variables and Columns that were not significant enough and choosing only variables required for proceeding with our analysis.
+head(normalized_class_dataset)
+```
+
+##### In the following section, visual representations such as PCA,and Pair Matrix have been used to depict the selected variables. 
+
+```{r}
+# SELECTED VARIABLE PLOTS:
+
+# 1. PCA FOR SELECTED VARIABLES:
+head(normalized_class_dataset)
+library(FactoMineR)
+PCA(normalized_class_dataset)
+```
+
+
+```{r}
+# 2. Pair Matrix for selected variables:
+library(psych)
+pairs.panels(normalized_class_dataset[1:26],gap=0,bg=c("red","yellow","blue")[normalized_class_dataset$Combined_Income],pch=21)
+```
+
+##### Performing hyper-parameter tuning using Grid Search method to determine the best 'k' value.
+
+```{r}
+library(caret)
+# Determining optimum 'k' value:
+# 1. Tuning 'k':
+model <- train(Combined_Income~Age+Hours.per.Week+`Workclass Federal-gov`+`Workclass Local-gov`+`Workclass Private`+`Workclass Self-emp-inc`+`Workclass Self-emp-not-inc`+`Workclass State-gov`+`Workclass Without-pay`+`Education 10th`+`Education 11th`+`Education 12th`+`Education 1st-4th`+`Education 5th-6th`+`Education 5th-6th`+`Education 7th-8th`+`Education 9th`+`Education Assoc-acdm`+`Education Assoc-voc`+`Education Bachelors`+`Education Doctorate`+`Education HS-grad`+`Education Masters`+`Education Preschool`+`Education Prof-school`+`Education Some-college`, data=normalized_class_dataset, method="knn")
+model
+```
+
+
+```{r}
+library(class)
+# Data Splitting:
+set.seed(123)
+Index_Train <- createDataPartition(normalized_class_dataset$Combined_Income,p=0.8,list = FALSE)
+Train <- normalized_class_dataset[Index_Train,]
+Test <- normalized_class_dataset[-Index_Train,]
+Train_Predictors <- Train[,1:25]                                 
+Test_Predictors <- Test[,1:25]
+Train_Labels <- Train[,26]
+Test_Labels <- Test[,26]
+```
+```{r}
+# Model's Performance when k=5
+Predicted_Test_labels_k5 <- knn(Train_Predictors,Test_Predictors,cl=Train_Labels,k=5)
+head(Predicted_Test_labels_k5)
+```
+
+```{r}
+# Model's Performance when k=7
+Predicted_Test_labels_k7 <- knn(Train_Predictors,Test_Predictors,cl=Train_Labels,k=7)
+head(Predicted_Test_labels_k7)
+```
+
+```{r}
+# Model's Performance when k=9
+Predicted_Test_labels_k9 <- knn(Train_Predictors,Test_Predictors,cl=Train_Labels,k=9)
+head(Predicted_Test_labels_k9)
+```
+
+
+##### Using Confusion Matrix to compare all potential k values,i.e k= 5,7 & 9. Based on these metrics, k = 9 seems to be the best choice. It has the highest accuracy (79.14%) and specificity (91.91%), indicating that it correctly classifies the majority of both negative and positive instances. Additionally, its precision (63.31%) is slightly higher than that of k = 7, meaning that among the instances predicted as positive, a higher proportion are actually positive. Although k = 9 has a slightly lower recall (41.40%) compared to k = 5 and k = 7, its overall performance, especially considering accuracy and specificity, makes it the most favorable choice. Therefore, k = 9 is the best k value for this particular classification task.
+
+```{r}
+# Confusion Matrix:
+# k=5
+library(gmodels)
+CrossTable(x=Test_Labels,y=Predicted_Test_labels_k5,prop.chisq = FALSE)
+```
+```{r}
+# k=7
+library(gmodels)
+CrossTable(x=Test_Labels,y=Predicted_Test_labels_k7,prop.chisq = FALSE)
+```
+
+```{r}
+# k=9
+library(gmodels)
+CrossTable(x=Test_Labels,y=Predicted_Test_labels_k9,prop.chisq = FALSE)
+```
+***
+##### For k = 5:
+True Positives (TP) = 646
+True Negatives (TN) = 4079
+False Positives (FP) = 431
+False Negatives (FN) = 876
+Total observations (N) = 6032
+Accuracy = (TP + TN) / N = (646 + 4079) / 6032 = 4725 / 6032 ≈ 0.7838 or 78.38%
+Recall (Sensitivity) = TP / (TP + FN) = 646 / (646 + 876) ≈ 0.4242 or 42.42%
+Precision = TP / (TP + FP) = 646 / (646 + 431) ≈ 0.6002 or 60.02%
+Specificity = TN / (TN + FP) = 4079 / (4079 + 431) ≈ 0.9044 or 90.44%
+
+##### For k = 7:
+True Positives (TP) = 641
+True Negatives (TN) = 4130
+False Positives (FP) = 380
+False Negatives (FN) = 881
+Total observations (N) = 6032
+Accuracy = (TP + TN) / N = (641 + 4130) / 6032 = 4771 / 6032 ≈ 0.7907 or 79.07%
+Recall (Sensitivity) = TP / (TP + FN) = 641 / (641 + 881) ≈ 0.4211 or 42.11%
+Precision = TP / (TP + FP) = 641 / (641 + 380) ≈ 0.6277 or 62.77%
+Specificity = TN / (TN + FP) = 4130 / (4130 + 380) ≈ 0.9159 or 91.59%
+
+##### For k = 9:
+True Positives (TP) = 631
+True Negatives (TN) = 4145
+False Positives (FP) = 365
+False Negatives (FN) = 891
+Total observations (N) = 6032
+Accuracy = (TP + TN) / N = (631 + 4145) / 6032 = 4776 / 6032 ≈ 0.7914 or 79.14%
+Recall (Sensitivity) = TP / (TP + FN) = 631 / (631 + 891) ≈ 0.4140 or 41.40%
+Precision = TP / (TP + FP) = 631 / (631 + 365) ≈ 0.6331 or 63.31%
+Specificity = TN / (TN + FP) = 4145 / (4145 + 365) ≈ 0.9191 or 91.91%
+
+
+
+##### Naive Bayes is the second classification algorithm that we are using for this dataset. We will be using confusion matrix to visualize the results and calculate the 4 metrics [Accuracy,Recall,Precision, and Specificity]
+```{r}
+# Naive-Bayes Classification:
+library(e1071)
+set.seed(123)
+# Split the data into Train and Test:
+Index_Train_NB <- createDataPartition(normalized_class_dataset$Combined_Income,p=0.8,list = FALSE)
+Train_NB <- normalized_class_dataset [Index_Train_NB,]
+Test_NB <- normalized_class_dataset[-Index_Train_NB,]
+```
+```{r}
+# Naive Bayes Model Building:
+NB_model <- naiveBayes(Combined_Income~Age+Hours.per.Week+`Workclass Federal-gov`+`Workclass Local-gov`+`Workclass Private`+`Workclass Self-emp-inc`+`Workclass Self-emp-not-inc`+`Workclass State-gov`+`Workclass Without-pay`+`Education 10th`+`Education 11th`+`Education 12th`+`Education 1st-4th`+`Education 5th-6th`+`Education 5th-6th`+`Education 7th-8th`+`Education 9th`+`Education Assoc-acdm`+`Education Assoc-voc`+`Education Bachelors`+`Education Doctorate`+`Education HS-grad`+`Education Masters`+`Education Preschool`+`Education Prof-school`+`Education Some-college`, data= Train_NB)
+```
+```{r}
+# Predicting Test dataset:
+Predicted_Test_Labels_NB <- predict(NB_model,Test_NB)
+```
+```{r}
+# Confusion Matrix:
+CrossTable(x=Test_NB$Combined_Income,y=Predicted_Test_Labels_NB,prop.chisq = FALSE)
+```
+***
+True Positives (TP) = 1430
+True Negatives (TN) = 654
+False Positives (FP) = 3903
+False Negatives (FN) = 45
+Total observations (N) = 6032
+Accuracy = (TP + TN) / N = (1430 + 654) / 6032 ≈ 2084 / 6032 ≈ 0.345 or 34.5%
+Recall (Sensitivity) = TP / (TP + FN) = 1430 / (1430 + 45) ≈ 0.969 or 96.9%
+Precision = TP / (TP + FP) = 1430 / (1430 + 3903) ≈ 0.268 or 26.8%
+Specificity = TN / (TN + FP) = 654 / (654 + 3903) ≈ 0.143 or 14.3%
+
+***
+#### Interpretation:
+
+For k-Nearest Neighbors (kNN) with k = 9:
+Accuracy: 79.14%
+Recall: 41.40%
+Precision: 63.31%
+Specificity: 91.91%
+
+For Naive Bayes (NB) Classifier:
+Accuracy: 34.5%
+Recall: 96.9%
+Precision: 26.8%
+Specificity: 14.3%
+
+Comparing the two algorithms:
+
+- Accuracy: kNN (79.14%) significantly outperforms NB (34.5%), indicating that kNN is better at correctly classifying both positive and negative instances overall.
+
+- Recall (Sensitivity): NB (96.9%) performs much better than kNN (41.40%) in identifying positive instances, indicating that NB is more sensitive to detecting positive instances.
+
+- Precision: kNN (63.31%) has a higher precision compared to NB (26.8%), meaning that kNN is better at correctly identifying positive instances among those predicted as positive.
+
+- Specificity: kNN (91.91%) has a higher specificity compared to NB (14.3%), indicating that kNN is better at correctly identifying negative instances.
+
+***
+
+##### Overall, considering all metrics, k-Nearest Neighbors (kNN) seems to be the better algorithm for this situation. It achieves higher accuracy, precision, and specificity compared to Naive Bayes. Although Naive Bayes has higher recall, its overall performance in terms of accuracy and precision is significantly lower than kNN. Therefore, kNN is preferred for this classification task.
+
+***
+
+```{r}
+# Returning probabilities to plot ROC:
+Predicted_Test_Labels_returning_NB <- predict(NB_model,Test_NB,type = "raw")
+head(Predicted_Test_Labels_returning_NB)
+```
+```{r}
+# ROC:
+library(pROC)
+roc(Test_NB$Combined_Income,Predicted_Test_Labels_returning_NB[,2])
+plot.roc(Test_NB$Combined_Income,Predicted_Test_Labels_returning_NB[,2])
+```
+
+
+#### Interpretation of the ROC curve:
+
+The closer the curve to the top-left corner, the higher the AUC, and the better the overall performance of the classifier.
+
+***
+
+
+
+
